@@ -6,10 +6,11 @@ Google Scholar Web Scraper
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
+
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver import Firefox
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 options = Options()
 options.add_argument('--headless')
@@ -36,6 +37,7 @@ def get_urls(querylist):
     df = pd.DataFrame(columns=['person', 'user_url'])
 
     for query in querylist:
+
         url = 'https://scholar.google.com/citations?view_op=search_authors&mauthors=' + query + '&hl=en&oi=ao'
         req = requests.get(url, headers)
         soup = BeautifulSoup(req.content, 'html.parser')
@@ -51,9 +53,14 @@ def get_urls(querylist):
     # Do something with these table cells.
         get_info(person_url)
 
+
+
 def get_info(user_url):
     url = 'https://scholar.google.com' + str(user_url)
-    driver = webdriver.Chrome(chrome_options=options, executable_path =r"/Users/melanyfuentes/PycharmProjects/googleScholarScraper/chromedriver")
+
+    options = Options()
+    options.add_argument("start-maximized")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.get(url)
 
     more = True
@@ -70,12 +77,19 @@ def get_info(user_url):
     elem.click()
     elem.click()
 
-    #print(driver.page_source)
+    page = driver.page_source
 
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    soup = BeautifulSoup(page, 'html.parser')
+
     #print(soup)
 
     results = soup.find_all(class_='gsc_a_tr')
+
+
+
+    for element in results:
+
+
     print(results[0])
 
 
