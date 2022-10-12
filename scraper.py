@@ -9,12 +9,16 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import csv
+import re
+import urllib.parse
 
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException
-
 
 # spoofing headers for bs4 to look legit
 headers = {
@@ -30,6 +34,7 @@ headers = {
 # then get the top url from the search
 # put this into a csv file
 
+# initial just getting user's actual profile link
 def get_urls(querylist, save_url):
     user_data = []
     # making data frame
@@ -58,20 +63,20 @@ options.add_argument('--headless')
 options.add_argument('--no-sandbox')
 
 
+# gets the information and adds it to dataframe
 def get_info(user_urls):
+    paper_frame = pd.DataFrame(columns=['author', 'title', 'link', 'year', 'coauthors', 'publish_location', 'pages'])
+
     csv_use = open(user_urls, "r")
     mycsv = csv.reader(csv_use)
     next(mycsv)
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+       # chrome_options=options,
+       #                       executable_path=r"/Users/melanyfuentes/PycharmProjects/googleScholarScraper/chromedriver")
     for row in mycsv:
-        print(row)
         if row[1] != "NA":
-            url = 'https://scholar.google.com' + str(row[1])
-            driver = webdriver.Chrome('/Users/melanyfuentes/PycharmProjects/googleScholarScraper/chromedriver', options=chrome_options)
-            try:
-                driver.get(url)
-            except WebDriverException:
-                print("page down")
-
+            url = str(row[1])
+            driver.get(url)
             elem = driver.find_element('xpath',
                                        '//*[@id="gsc_bpf_more"]')  # just clicking through, make this nicer later
             # clicking through the more thing
@@ -83,13 +88,82 @@ def get_info(user_urls):
             elem.click()
             elem.click()
             elem.click()
-            page = driver.page_source
 
-            soup = BeautifulSoup(page, 'html.parser')
-            results = soup.find_all(class_='gsc_a_tr')
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            all_papers = soup.find_all(class_='gsc_a_tr')
+
+            if len(soup) > 0:
+                for paper in all_papers:
+                    author = row[0]
+                    titles = paper.find(attrs={"class": "gsc_a_at"})  # (class_='gsc_a_at')
+                    paper_link = "https://scholar.google.com/" + titles.get("href")
+                    titles = re.sub("\<.*?\>", "", str(titles))
+
+                    info_dict = get_paper_info(author, titles)
+                    paper_frame.append(info_dict)
+                    print(paper_frame)
 
 
-# def make_pretty(html_code)
+                    # paper_frame.loc[len(paper_frame.index)] = [row[0], ]
+
+
+def get_paper_info(authored, title):
+    driver1 = webdriver.Chrome(options=options,
+                               executable_path=r"/Users/melanyfuentes/PycharmProjects/googleScholarScraper/chromedriver")
+
+    add_part = urllib.parse.quote_plus(authored) + " " + urllib.parse.quote_plus(title)
+    link = 'https://scholar.google.com/scholar?hl=en&as_sdt=0%2C34&q=' + add_part + '&btnG='
+    driver1.get(link)
+
+
+    elem1 = driver1.find_element(By.XPATH,
+                                '//*[@id="gs_res_ccl_mid"]/div[1]/div[2]/div[3]/a[2]')
+    elem1.click()
+
+    elem2 = driver1.find_element(By.XPATH, '//*[@id="gs_citi"]/a[1]')
+    elem2.click()
+
+    elem3 = driver1.find_element(By.XPATH, "/html/body/pre").text
+        #elem2.text #driver1.find_element(By.XPATH, '/html/body/pre/text()').text
+
+    return bibtex_helper(elem3)
+
+
+# @article{yudell2016taking,
+#   title={Taking race out of human genetics},
+#   author={Yudell, Michael and Roberts, Dorothy and DeSalle, Rob and Tishkoff, Sarah},
+#   journal={Science},
+#   volume={351},
+#   number={6273},
+#   pages={564--565},
+#   year={2016},
+#   publisher={American Association for the Advancement of Science}
+# }
+
+# input entire bibtex citation page. Pass argument as bs4 class
+def bibtex_helper(fulltext):
+    mydict = {}
+    type = fulltext[1: fulltext.index("{")]
+    mydict["type"] = type
+
+    print(type)
+    rest_split = fulltext[fulltext.index("{")+1: ]
+    rest_split = rest_split.splitlines()[1:] #getting rid of first line
+    #rest_split = [word.strip() for word in rest_split.split(',')]
+    print(rest_split)
+
+    for elem in rest_split:
+        elem_pair = elem.split('=')
+        key = str(elem_pair[0].strip())
+        print("key is: " + key)
+        lock = str(elem_pair[1][elem_pair[1].index("{")+1:elem_pair[1].index("}")-1])
+        print("Lock is: " + lock)
+        mydict[key] = lock
+
+    return mydict
+
+    # returns
+    # authors, publication date, publisher
 
 
 if __name__ == '__main__':
@@ -103,12 +177,16 @@ if __name__ == '__main__':
     # Getting names
     df = pd.ExcelFile(args.authorData).parse('Sheet1')
     queries = [x for x in df[args.columnName]]
+    # queries = ['Dorothy+Roberts']
 
     # getting URLs and saving into dataframe
-    saveDir = "data/" + str(datetime.now().strftime("%m.%d.%Y_%H:%M:%S")) + ".csv"
+    saveDir = "data/user_links" + str(datetime.now().strftime("%m.%d.%Y_%H:%M:%S")) + ".csv"
     get_urls(queries, saveDir)
+    #saveDir = "data/10.10.2022_15:59:39.csv"
 
     get_info(saveDir)
+
+    #get_paper_info('dorothy roberts', 'Killing the black body: Race, reproduction, and the meaning of liberty')
 
     # Take existing dataframe URLs and get csv entries
     # get_info()
